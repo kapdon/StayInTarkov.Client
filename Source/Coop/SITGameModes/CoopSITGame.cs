@@ -1181,23 +1181,6 @@ namespace StayInTarkov.Coop.SITGameModes
             for (int i = 0; i < magazines.Count(); i++)
                 Profile_0.CheckMagazines(magazines[i].Id, 2);
 
-            // ------------------------------------------------------------------------
-            // Setup Winter
-            //try
-            //{
-            //    bool isWinter = BackEndSession.IsWinter;
-            //    WinterEventController winterEventController = new WinterEventController();
-            //    ReflectionHelpers.GetFieldFromTypeByFieldType(typeof(GameWorld), typeof(WinterEventController)).SetValue(Singleton<GameWorld>.Instance, winterEventController);
-            //    winterEventController.Run(isWinter).ContinueWith(x => { if (x.IsFaulted) Logger.LogError(x.Exception); return Task.CompletedTask; });
-            //}
-            //catch (Exception ex)
-            //{
-            //    ConsoleScreen.LogException(ex);
-            //    Logger.LogError(ex);
-            //}
-
-            // TODO: Event System
-
             if (shouldSpawnBots)
             {
                 Logger.LogDebug($"Running Wave Scenarios");
@@ -1211,6 +1194,26 @@ namespace StayInTarkov.Coop.SITGameModes
             }
 
             yield return new WaitForEndOfFrame();
+
+            BackendConfigSettingsClass instance = Singleton<BackendConfigSettingsClass>.Instance;
+            if (instance != null && instance.EventSettings.EventActive && !instance.EventSettings.LocationsToIgnore.Contains(base.Location_0.Id))
+            {
+                Singleton<GameWorld>.Instance.HalloweenEventController = new HalloweenEventControllerClass();
+                GameObject gameObject = (GameObject)Resources.Load("Prefabs/HALLOWEEN_CONTROLLER");
+                if (gameObject != null)
+                {
+                    GClass5.InstantiatePrefab(base.transform, gameObject);
+                }
+                else
+                {
+                    UnityEngine.Debug.LogError("Can't find event prefab in resources. Path : Prefabs/HALLOWEEN_CONTROLLER");
+                }
+            }
+            ESeason season = BackEndSession.Season;
+            Class392 @class = new Class392();
+            Singleton<GameWorld>.Instance.GInterface26_0 = @class;
+            Task task = @class.Run(season);
+            yield return new WaitUntil(() => task.IsCompleted);
 
             // Add FreeCamController to GameWorld GameObject
             Singleton<GameWorld>.Instance.gameObject.GetOrAddComponent<FreeCameraController>();
@@ -1568,34 +1571,17 @@ namespace StayInTarkov.Coop.SITGameModes
                     location = await BackEndSession.LoadLocationLoot(Location_0.Id, variantId);
                 }
             }
-            BackendConfigSettingsClass instance = Singleton<BackendConfigSettingsClass>.Instance;
-            // TODO: Event / Seasonal settings
-            //if (instance != null && instance.HalloweenSettings.EventActive && !instance.HalloweenSettings.LocationsToIgnore.Contains(location._Id))
-            //{
-            //    GameObject gameObject = (GameObject)Resources.Load("Prefabs/HALLOWEEN_CONTROLLER");
-            //    if (gameObject != null)
-            //    {
-            //        GClass5.InstantiatePrefab(base.transform, gameObject);
-            //    }
-            //    else
-            //    {
-            //        UnityEngine.Debug.LogError("Can't find event prefab in resources. Path : Prefabs/HALLOWEEN_CONTROLLER");
-            //    }
-            //}
             BackendConfigManagerConfig config = BackendConfigManager.Config;
             if (config.FixedFrameRate > 0f)
             {
                 base.FixedDeltaTime = 1f / config.FixedFrameRate;
             }
-            //using (TokenStarter.StartWithToken("player create"))
-            {
-                EFT.Player player = await CreatePlayerSpawn();
-                dictionary_0.Add(player.ProfileId, player);
-                gparam_0 = func_1(player);
-                PlayerCameraController.Create(gparam_0.Player);
-                FPSCamera.Instance.SetOcclusionCullingEnabled(Location_0.OcculsionCullingEnabled);
-                FPSCamera.Instance.IsActive = false;
-            }
+            EFT.Player player = await CreatePlayerSpawn();
+            dictionary_0.Add(player.ProfileId, player);
+            gparam_0 = func_1(player);
+            PlayerCameraController.Create(gparam_0.Player);
+            FPSCamera.Instance.SetOcclusionCullingEnabled(Location_0.OcculsionCullingEnabled);
+            FPSCamera.Instance.IsActive = false;
 
             await SpawnLoot(location);
             await WaitForPlayersToSpawn();
