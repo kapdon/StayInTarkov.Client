@@ -19,6 +19,7 @@ using EFT.Interactive;
 using EFT.InventoryLogic;
 using EFT.MovingPlatforms;
 using EFT.UI;
+using EFT.UI.Matchmaker;
 using EFT.UI.Screens;
 using EFT.Weather;
 using JsonType;
@@ -51,12 +52,13 @@ namespace StayInTarkov.Coop.SITGameModes
     /// <summary>
     /// A custom Game Type
     /// </summary>
-    public sealed class CoopSITGame : BaseLocalGame<GamePlayerOwner>, IBotGame, ISITGame
+    public sealed class CoopSITGame : BaseLocalGame<EftGamePlayerOwner>, IBotGame, ISITGame
     {
         public string DisplayName { get; } = "Coop Game";
 
         public new bool InRaid { get { return true; } }
 
+        public string InfiltrationPoint { get; set; }
 
         public ISession BackEndSession { get { return StayInTarkovHelperConstants.BackEndSession; } }
 
@@ -142,14 +144,9 @@ namespace StayInTarkov.Coop.SITGameModes
             Logger = BepInEx.Logging.Logger.CreateLogSource(nameof(CoopSITGame));
             Logger.LogInfo("CoopGame.Create");
 
-            //location.OfflineNewSpawn = false;
-            //location.OfflineOldSpawn = true;
-            //location.OldSpawn = true;
-
             CoopSITGame coopGame = 
                 smethod_0<CoopSITGame>(inputTree, profile, backendDateTime, insurance, menuUI, commonUI, preloaderUI, gameUI, location, timeAndWeather, wavesSettings, dateTime
                 , callback, fixedDeltaTime, updateQueue, backEndSession, new TimeSpan?(sessionTime));
-
 
 #if DEBUG
             Logger.LogDebug($"DEBUG:{nameof(backendDateTime)}:{backendDateTime.ToJson()}");
@@ -177,7 +174,13 @@ namespace StayInTarkov.Coop.SITGameModes
             var bosswavemanagerValue = BossWaveManager.smethod_0(coopGame.BossWaves, new Action<BossLocationSpawn>((bossWave) => { coopGame.PBotsController.ActivateBotsByWave(bossWave); }));
             coopGame.BossWaveManager = bosswavemanagerValue;
 
-            coopGame.func_1 = (player) => GamePlayerOwner.Create<GamePlayerOwner>(player, inputTree, insurance, backEndSession, commonUI, preloaderUI, gameUI, coopGame.GameDateTime, location);
+            //coopGame.func_1 = (player) => GamePlayerOwner.Create<GamePlayerOwner>(player, inputTree, insurance, backEndSession, commonUI, preloaderUI, gameUI, coopGame.GameDateTime, location);
+            coopGame.func_1 = delegate (EFT.Player player)
+            {
+                var val = EftGamePlayerOwner.Create<EftGamePlayerOwner>(player, inputTree, insurance, backEndSession, gameUI, coopGame.GameDateTime, location);
+                val.OnLeave += coopGame.vmethod_3;
+                return val;
+            };
 
             // ---------------------------------------------------------------------------------
             // Setup ISITGame Singleton
@@ -187,9 +190,6 @@ namespace StayInTarkov.Coop.SITGameModes
             // Create Coop Game Component
             Logger.LogDebug($"{nameof(Create)}:Running {nameof(coopGame.CreateCoopGameComponent)}");
             coopGame.CreateCoopGameComponent();
-            SITGameComponent.GetCoopGameComponent().LocalGameInstance = coopGame;
-
-
 
             // ---------------------------------------------------------------------------------
             // Create GameClient(s)
@@ -234,7 +234,6 @@ namespace StayInTarkov.Coop.SITGameModes
             }
             CoopPatches.CoopGameComponentParent.AddComponent<ActionPacketHandlerComponent>();
             var coopGameComponent = CoopPatches.CoopGameComponentParent.AddComponent<SITGameComponent>();
-            coopGameComponent.LocalGameInstance = this;
 
             //coopGameComponent = gameWorld.GetOrAddComponent<CoopGameComponent>();
             if (!string.IsNullOrEmpty(SITMatchmaking.GetGroupId()))
@@ -645,20 +644,20 @@ namespace StayInTarkov.Coop.SITGameModes
         //    return await LocalPlayer.Create(playerId, position, rotation, "Player", "", EPointOfView.FirstPerson, profile, aiControl: false, base.UpdateQueue, armsUpdateMode, EFT.Player.EUpdateMode.Auto, BackendConfigManager.Config.CharacterController.ClientPlayerMode, () => Singleton<SettingsManager>.Instance.Control.Settings.MouseSensitivity, () => Singleton<SettingsManager>.Instance.Control.Settings.MouseAimingSensitivity, new StatisticsManagerForPlayer1(), new FilterCustomizationClass(), questController, isYourPlayer: true);
         //}
 
-        public string InfiltrationPoint;
-
-        //public override void vmethod_0()
-        //{
-        //}
 
         /// <summary>
         /// Matchmaker countdown
         /// </summary>
-        /// <param name="timeBeforeDeploy"></param>
-        public override void vmethod_1(float timeBeforeDeploy)
+        public override IEnumerator vmethod_1()
         {
-
-            base.vmethod_1(timeBeforeDeploy);
+            int timeBeforeDeployLocal = Singleton<BackendConfigSettingsClass>.Instance.TimeBeforeDeployLocal;
+            DateTime gameStartTime = DateTime.Now.AddSeconds(timeBeforeDeployLocal);
+            new MatchmakerFinalCountdown.GClass3178(base.Profile_0, gameStartTime).ShowScreen(EScreenState.Root);
+            MonoBehaviourSingleton<BetterAudio>.Instance.FadeInVolumeBeforeRaid(timeBeforeDeployLocal);
+            Singleton<GUISounds>.Instance.StopMenuBackgroundMusicWithDelay(timeBeforeDeployLocal);
+            GameUi.gameObject.SetActive(value: true);
+            GameUi.TimerPanel.ProfileId = ProfileId;
+            yield return new WaitForSeconds(timeBeforeDeployLocal);
         }
 
         public static void SendOrReceiveSpawnPoint(ref ISpawnPoint selectedSpawnPoint, SpawnPoints spawnPoints)
@@ -1049,9 +1048,11 @@ namespace StayInTarkov.Coop.SITGameModes
         /// <param name="spawnSystem"></param>
         /// <param name="runCallback"></param>
         /// <returns></returns>
-        public override IEnumerator vmethod_4(float startDelay, BotControllerSettings controllerSettings, ISpawnSystem spawnSystem, Callback runCallback)
+        public override IEnumerator vmethod_4(BotControllerSettings controllerSettings, ISpawnSystem spawnSystem, Callback runCallback)
         {
             //Logger.LogDebug("vmethod_4");
+
+            yield return StartCoroutine(vmethod_1());
 
             var shouldSpawnBots = !SITMatchmaking.IsClient && PluginConfigSettings.Instance.CoopSettings.EnableAISpawnWaveSystem;
             if (!shouldSpawnBots)
@@ -1135,8 +1136,6 @@ namespace StayInTarkov.Coop.SITGameModes
                 }
             }
 
-            yield return new WaitForSeconds(startDelay);
-
             try
             {
                 if (shouldSpawnBots)
@@ -1184,18 +1183,20 @@ namespace StayInTarkov.Coop.SITGameModes
 
             // ------------------------------------------------------------------------
             // Setup Winter
-            try
-            {
-                bool isWinter = BackEndSession.IsWinter;
-                WinterEventController winterEventController = new WinterEventController();
-                ReflectionHelpers.GetFieldFromTypeByFieldType(typeof(GameWorld), typeof(WinterEventController)).SetValue(Singleton<GameWorld>.Instance, winterEventController);
-                winterEventController.Run(isWinter).ContinueWith(x => { if (x.IsFaulted) Logger.LogError(x.Exception); return Task.CompletedTask; });
-            }
-            catch (Exception ex)
-            {
-                ConsoleScreen.LogException(ex);
-                Logger.LogError(ex);
-            }
+            //try
+            //{
+            //    bool isWinter = BackEndSession.IsWinter;
+            //    WinterEventController winterEventController = new WinterEventController();
+            //    ReflectionHelpers.GetFieldFromTypeByFieldType(typeof(GameWorld), typeof(WinterEventController)).SetValue(Singleton<GameWorld>.Instance, winterEventController);
+            //    winterEventController.Run(isWinter).ContinueWith(x => { if (x.IsFaulted) Logger.LogError(x.Exception); return Task.CompletedTask; });
+            //}
+            //catch (Exception ex)
+            //{
+            //    ConsoleScreen.LogException(ex);
+            //    Logger.LogError(ex);
+            //}
+
+            // TODO: Event System
 
             if (shouldSpawnBots)
             {
@@ -1223,12 +1224,6 @@ namespace StayInTarkov.Coop.SITGameModes
             }
             runCallback.Succeed();
 
-        }
-
-        public override void vmethod_5()
-        {
-            Logger.LogDebug(nameof(vmethod_5));
-            //base.vmethod_5();
         }
 
         public void CreateExfiltrationPointAndInitDeathHandler()
@@ -1544,7 +1539,7 @@ namespace StayInTarkov.Coop.SITGameModes
 
         private NonWavesSpawnScenario nonWavesSpawnScenario_0;
 
-        private Func<EFT.Player, GamePlayerOwner> func_1;
+        private Func<EFT.Player, EftGamePlayerOwner> func_1;
 
 
         public new void method_6(string backendUrl, string locationId, int variantId)
@@ -1574,18 +1569,19 @@ namespace StayInTarkov.Coop.SITGameModes
                 }
             }
             BackendConfigSettingsClass instance = Singleton<BackendConfigSettingsClass>.Instance;
-            if (instance != null && instance.HalloweenSettings.EventActive && !instance.HalloweenSettings.LocationsToIgnore.Contains(location._Id))
-            {
-                GameObject gameObject = (GameObject)Resources.Load("Prefabs/HALLOWEEN_CONTROLLER");
-                if (gameObject != null)
-                {
-                    GClass5.InstantiatePrefab(base.transform, gameObject);
-                }
-                else
-                {
-                    UnityEngine.Debug.LogError("Can't find event prefab in resources. Path : Prefabs/HALLOWEEN_CONTROLLER");
-                }
-            }
+            // TODO: Event / Seasonal settings
+            //if (instance != null && instance.HalloweenSettings.EventActive && !instance.HalloweenSettings.LocationsToIgnore.Contains(location._Id))
+            //{
+            //    GameObject gameObject = (GameObject)Resources.Load("Prefabs/HALLOWEEN_CONTROLLER");
+            //    if (gameObject != null)
+            //    {
+            //        GClass5.InstantiatePrefab(base.transform, gameObject);
+            //    }
+            //    else
+            //    {
+            //        UnityEngine.Debug.LogError("Can't find event prefab in resources. Path : Prefabs/HALLOWEEN_CONTROLLER");
+            //    }
+            //}
             BackendConfigManagerConfig config = BackendConfigManager.Config;
             if (config.FixedFrameRate > 0f)
             {
@@ -1637,7 +1633,7 @@ namespace StayInTarkov.Coop.SITGameModes
                     //ReflectionHelpers.GetMethodForType(parentPlayerLoopSystemType, "FindParentPlayerLoopSystem").Invoke(null, new object[] { currentPlayerLoop, typeof(EarlyUpdate.UpdateTextureStreamingManager), playerLoopSystem, index });
                     
                     // TODO: Remap or figure out a way to avoid this
-                    GClass572.FindParentPlayerLoopSystem(currentPlayerLoop, typeof(EarlyUpdate.UpdateTextureStreamingManager), out playerLoopSystem, out index);
+                    GClass566.FindParentPlayerLoopSystem(currentPlayerLoop, typeof(EarlyUpdate.UpdateTextureStreamingManager), out playerLoopSystem, out index);
                     PlayerLoopSystem[] array2 = new PlayerLoopSystem[playerLoopSystem.subSystemList.Length];
                     if (index != -1)
                     {
@@ -1649,7 +1645,7 @@ namespace StayInTarkov.Coop.SITGameModes
                         playerLoopSystem.subSystemList[index] = playerLoopSystem3;
                         PlayerLoop.SetPlayerLoop(currentPlayerLoop);
                     }
-                    await Singleton<PoolManager>.Instance.LoadBundlesAndCreatePools(PoolManager.PoolsCategory.Raid, PoolManager.AssemblyType.Local, array, JobPriority.General, new GClass3273<GStruct118>(delegate (GStruct118 p)
+                    await Singleton<PoolManager>.Instance.LoadBundlesAndCreatePools(PoolManager.PoolsCategory.Raid, PoolManager.AssemblyType.Local, array, JobPriority.General, new GClass3276<GStruct119>(delegate (GStruct119 p)
                     {
                         SetMatchmakerStatus("Loading loot... " + p.Stage, p.Progress);
                     }));

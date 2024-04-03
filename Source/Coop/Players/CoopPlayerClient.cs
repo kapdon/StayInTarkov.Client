@@ -668,10 +668,10 @@ namespace StayInTarkov.Coop.Players
             new Process<GrenadeController, IThrowableCallback>(this, controllerFactory, throwWeap).method_0(null, callback, scheduled);
         }
 
-        public override void Proceed(bool withNetwork, Callback<IController> callback, bool scheduled = true)
+        public override void Proceed(bool withNetwork, Callback<GIController> callback, bool scheduled = true)
         {
             Func<EmptyHandsController> controllerFactory = () => EmptyHandsController.smethod_5<EmptyHandsController>(this);
-            new Process<EmptyHandsController, IController>(this, controllerFactory, null).method_0(null, callback, scheduled);
+            new Process<EmptyHandsController, GIController>(this, controllerFactory, null).method_0(null, callback, scheduled);
         }
 
 
