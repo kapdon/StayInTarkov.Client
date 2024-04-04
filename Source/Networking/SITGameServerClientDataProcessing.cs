@@ -218,7 +218,7 @@ namespace StayInTarkov.Networking
                 return;
             }
 
-            var bp = new BasePacket("");
+            var bp = new BasePacket(null);
             using (var br = new BinaryReader(new MemoryStream(data)))
                 bp.ReadHeader(br);
 
@@ -245,16 +245,28 @@ namespace StayInTarkov.Networking
                 Logger.LogInfo(dictObject.ToJson());
             }
 
-            packet = DeserializeIntoPacket(data, packet, bp);
+            packet = DeserializeIntoPacket(data, packet, bp.Method);
         }
 
-        private static ISITPacket DeserializeIntoPacket(byte[] data, ISITPacket packet, BasePacket bp)
+        /// <summary>
+        /// The ISITPacket Types
+        /// </summary>
+        private static List<Type> ListOfPacketTypes { get; set; }
+
+        private static ISITPacket DeserializeIntoPacket(byte[] data, ISITPacket packet, string method)
         {
-            var sitPacketType =
-                            StayInTarkovHelperConstants
-                            .SITTypes
-                            .Union(ReflectionHelpers.EftTypes)
-                            .FirstOrDefault(x => x.Name == bp.Method);
+            // Get the List of SIT Packet Types
+            if (ListOfPacketTypes == null) 
+            {
+                ListOfPacketTypes =
+                        StayInTarkovHelperConstants
+                        .SITTypes
+                        .Union(ReflectionHelpers.EftTypes)
+                        .Where(x => x.GetInterface(nameof(ISITPacket)) != null)
+                        .ToList();
+            }
+
+            var sitPacketType = ListOfPacketTypes.FirstOrDefault(x => x.Name == method);
             if (sitPacketType != null)
             {
                 //Logger.LogInfo($"{sitPacketType} found");
@@ -264,7 +276,7 @@ namespace StayInTarkov.Networking
             else
             {
 #if DEBUG
-                Logger.LogDebug($"{nameof(DeserializeIntoPacket)}:{bp.Method} could not find a matching ISITPacket type");
+                Logger.LogDebug($"{nameof(DeserializeIntoPacket)}:{method} could not find a matching ISITPacket type");
 #endif
             }
 
